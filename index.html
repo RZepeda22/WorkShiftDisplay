@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DoctorSV - Visor de Turnos</title>
+    
+    <!-- PWA Etiquetas Requeridas -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <!-- Librerías Externas -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+    
+    <!-- Estilos Locales -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="text-slate-200 min-h-screen flex flex-col">
+
+    <!-- Modal Paso 2 (Selección Segura de Archivo) -->
+    <div id="step2-modal" class="hidden fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center">
+            <div class="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-4 border border-indigo-500/50">
+                <svg class="w-8 h-8 text-indigo-400 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+            </div>
+            <h3 class="text-xl font-semibold text-white mb-2">¡Descarga en proceso!</h3>
+            <p class="text-sm text-slate-400 mb-6">El navegador está guardando tu Excel. Cuando termine, haz clic abajo para seleccionarlo.</p>
+            <label for="file-upload" onclick="closeStep2Modal()" class="cursor-pointer block w-full bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-3 rounded-xl text-sm font-medium transition-all shadow-md shadow-indigo-900/20">
+                Seleccionar archivo descargado
+            </label>
+            <button onclick="closeStep2Modal()" class="mt-4 text-xs text-slate-500 hover:text-slate-300 font-medium">Cancelar</button>
+        </div>
+    </div>
+
+    <!-- Overlay Cargando -->
+    <div id="loading-overlay" class="hidden fixed inset-0 z-[60] bg-slate-900/70 backdrop-blur-sm flex flex-col items-center justify-center">
+        <div class="w-12 h-12 border-4 border-slate-600 border-t-indigo-500 rounded-full animate-spin mb-4"></div>
+        <p id="loading-text" class="text-white font-medium">Procesando archivo...</p>
+    </div>
+
+    <!-- Input de archivo oculto -->
+    <input type="file" id="file-upload" accept=".xlsx, .xls, .csv" class="hidden" />
+
+    <!-- Navbar -->
+    <nav class="border-b border-slate-700/50 bg-slate-900/80 sticky top-0 z-50 backdrop-blur-md shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
+            <div class="flex items-center space-x-3">
+                <div class="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center text-white font-bold tracking-wider">SV</div>
+                <span class="text-lg font-semibold text-white tracking-tight hidden md:block">Turnos Operativos</span>
+            </div>
+            <div class="flex items-center space-x-2 sm:space-x-3">
+                
+                <!-- Botón Instalar PWA -->
+                <button id="btn-install" class="hidden bg-emerald-600 hover:bg-emerald-500 border border-emerald-500 text-white text-sm font-medium py-2 px-3 sm:px-4 rounded-lg transition-all shadow-sm items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    <span class="hidden sm:inline">Instalar App</span>
+                </button>
+
+                <!-- Botón Subir Local -->
+                <label for="file-upload" class="cursor-pointer bg-slate-800 hover:bg-slate-700 border border-slate-600 text-sm font-medium py-2 px-3 sm:px-4 rounded-lg transition-all shadow-sm flex items-center gap-2 text-white">
+                    <svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg>
+                    <span class="hidden sm:inline">Archivo Local</span>
+                </label>
+
+                <!-- Limpiar Datos -->
+                <button id="btn-clear" onclick="clearData()" class="bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-sm font-medium p-2 sm:py-2 sm:px-3 rounded-lg transition-all flex items-center gap-2" title="Limpiar Datos">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        
+        <!-- Panel Sincronización Google Sheets -->
+        <div class="glass-panel p-4 sm:p-5 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 w-full">
+            <div class="w-full sm:w-2/3">
+                <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 block">Sincronización con Google Sheets</label>
+                <input type="text" id="sheet-url" placeholder="Pega el enlace de Google Sheets (https://docs.google.com/...)" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors placeholder-slate-600">
+            </div>
+            <button onclick="downloadAndLoad()" class="w-full sm:w-auto mt-4 sm:mt-0 bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-all shadow-md flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Descargar y Cargar
+            </button>
+        </div>
+
+        <!-- Estado Vacío -->
+        <div id="empty-state" class="hidden flex flex-col items-center justify-center py-20 text-slate-400 glass-panel rounded-2xl border-dashed border-2 border-slate-700">
+            <div class="w-16 h-16 bg-slate-800/50 rounded-full flex items-center justify-center mb-4 border border-slate-700">
+                <svg class="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+            </div>
+            <h2 class="text-lg font-medium text-white mb-2">No hay datos en memoria</h2>
+            <p class="text-sm max-w-md text-center">Pega el enlace de tu archivo arriba y haz clic en "Descargar y Cargar" para sincronizar.</p>
+        </div>
+
+        <!-- Visualizador Principal -->
+        <div id="data-state" class="hidden space-y-6">
+            <div class="flex flex-col glass-panel p-5 rounded-2xl shadow-sm space-y-5">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between w-full">
+                    <div class="mb-4 sm:mb-0">
+                        <h2 class="text-lg font-medium text-white">Visualizador Diario de Turnos</h2>
+                        <p class="text-sm text-slate-400 mt-1 flex items-center">
+                            <span class="inline-block w-2 h-2 rounded-full bg-green-400 mr-2 animate-pulse"></span>
+                            Referencia: <span id="ref-time-label" class="ml-1 font-mono text-indigo-300 font-semibold bg-indigo-900/30 px-2 py-0.5 rounded"></span>
+                        </p>
+                    </div>
+                    <div class="flex items-center space-x-3 bg-slate-900/50 p-2 rounded-xl border border-slate-700">
+                        <label class="text-sm text-slate-400 pl-2">Fecha:</label>
+                        <input type="date" id="date-picker" onchange="handleDateChange(event)" class="bg-slate-800 border-none text-white text-sm rounded-lg focus:ring-2 focus:ring-indigo-500 block px-3 py-1.5 outline-none cursor-pointer">
+                    </div>
+                </div>
+
+                <div class="border-t border-slate-700/50 pt-4 w-full">
+                    <div class="flex items-center justify-between mb-3">
+                        <label class="text-sm font-medium text-slate-300 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
+                            Filtrar por Puesto
+                        </label>
+                    </div>
+                    <div id="role-filters" class="flex flex-wrap gap-2"></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Ayer -->
+                <div class="glass-panel rounded-2xl flex flex-col h-[600px]">
+                    <div class="bg-slate-800/40 px-5 py-4 border-b border-slate-700/50 rounded-t-2xl flex justify-between items-center">
+                        <h3 class="font-medium text-slate-200">Ayer</h3>
+                        <span id="label-ayer" class="text-xs text-slate-400 font-mono bg-slate-900/80 px-2.5 py-1 rounded-md border border-slate-700"></span>
+                    </div>
+                    <div class="p-4 flex-grow overflow-y-auto space-y-4" id="list-ayer"></div>
+                </div>
+
+                <!-- Hoy -->
+                <div class="glass-panel rounded-2xl flex flex-col h-[600px] ring-1 ring-indigo-500/50 shadow-[0_0_20px_rgba(99,102,241,0.15)] relative transform lg:-translate-y-1">
+                    <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-blue-500 to-indigo-500 rounded-t-2xl"></div>
+                    <div class="bg-indigo-900/10 px-5 py-4 border-b border-indigo-500/20 rounded-t-2xl flex justify-between items-center mt-1">
+                        <h3 class="font-medium text-indigo-100 flex items-center">
+                            <svg class="w-4 h-4 text-indigo-400 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            Hoy
+                        </h3>
+                        <span id="label-hoy" class="text-xs text-indigo-300 font-mono bg-indigo-900/50 px-2.5 py-1 rounded-md border border-indigo-500/30 font-semibold"></span>
+                    </div>
+                    <div class="p-4 flex-grow overflow-y-auto space-y-4" id="list-hoy"></div>
+                </div>
+
+                <!-- Mañana -->
+                <div class="glass-panel rounded-2xl flex flex-col h-[600px]">
+                    <div class="bg-slate-800/40 px-5 py-4 border-b border-slate-700/50 rounded-t-2xl flex justify-between items-center">
+                        <h3 class="font-medium text-slate-200">Mañana</h3>
+                        <span id="label-manana" class="text-xs text-slate-400 font-mono bg-slate-900/80 px-2.5 py-1 rounded-md border border-slate-700"></span>
+                    </div>
+                    <div class="p-4 flex-grow overflow-y-auto space-y-4" id="list-manana"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Lógica de la Aplicación -->
+    <script src="app.js"></script>
+</body>
+</html>
