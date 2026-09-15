@@ -5,23 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>DoctorSV - Visor de Turnos</title>
     
-    <!-- PWA Etiquetas Requeridas -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#0f172a">
     <link rel="apple-touch-icon" href="icon.svg">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-    <!-- Librerías Externas -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-    
-    <!-- Estilos Locales -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body class="text-slate-200 min-h-screen flex flex-col">
 
-    <!-- Modal Paso 2 (Selección Segura de Archivo) -->
+    <!-- MODAL DE ALARMA DE RELOJ GIGANTE -->
+    <div id="alarm-modal" class="hidden fixed inset-0 z-[9999] bg-red-900/95 backdrop-blur-lg flex items-center justify-center p-4">
+        <div class="bg-slate-900 border-4 border-red-500 rounded-3xl w-full max-w-md p-8 shadow-[0_0_100px_rgba(239,68,68,0.6)] text-center flex flex-col items-center animate-pulse">
+            <div class="relative mb-6">
+                <svg class="w-24 h-24 text-red-500 animate-bounce relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <div class="absolute inset-0 bg-red-500 rounded-full blur-xl opacity-50 animate-ping"></div>
+            </div>
+            <h2 class="text-4xl font-black text-white mb-2 uppercase tracking-widest text-red-100">¡ALARMA!</h2>
+            <p id="alarm-message" class="text-xl text-red-200 mb-10 font-medium">Tu turno comienza pronto.</p>
+            <button onclick="stopAlarm()" class="bg-red-600 hover:bg-red-500 text-white text-2xl font-black py-5 px-8 rounded-2xl shadow-[0_0_30px_rgba(220,38,38,0.8)] transition-transform hover:scale-105 w-full tracking-wider">
+                APAGAR ALARMA
+            </button>
+        </div>
+    </div>
+
+    <!-- Modal Paso 2 (Selección Segura) -->
     <div id="step2-modal" class="hidden fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center">
             <div class="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-4 border border-indigo-500/50">
@@ -29,10 +40,57 @@
             </div>
             <h3 class="text-xl font-semibold text-white mb-2">¡Descarga en proceso!</h3>
             <p class="text-sm text-slate-400 mb-6">El navegador está guardando tu Excel. Cuando termine, haz clic abajo para seleccionarlo.</p>
-            <label for="file-upload" onclick="closeStep2Modal()" class="cursor-pointer block w-full bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-3 rounded-xl text-sm font-medium transition-all shadow-md shadow-indigo-900/20">
+            <label for="file-upload" onclick="closeStep2Modal()" class="cursor-pointer block w-full bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-3 rounded-xl text-sm font-medium transition-all shadow-md">
                 Seleccionar archivo descargado
             </label>
             <button onclick="closeStep2Modal()" class="mt-4 text-xs text-slate-500 hover:text-slate-300 font-medium">Cancelar</button>
+        </div>
+    </div>
+
+    <!-- Modal Notificaciones y Autocompletado -->
+    <div id="notif-modal" class="hidden fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl relative overflow-visible">
+            <h3 class="text-lg font-semibold text-white mb-1 flex items-center gap-2">
+                <svg class="w-5 h-5 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-1.293 1.293A1 1 0 003 14h14a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"></path></svg>
+                Alarma de Turnos
+            </h3>
+            <p class="text-xs text-slate-400 mb-5">Configura una alarma sonora personalizada antes de comenzar tus labores.</p>
+            
+            <div class="space-y-5">
+                <!-- Buscador Autocompletado -->
+                <div class="relative">
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Busca tu Nombre</label>
+                    <input type="text" id="notif-name-input" autocomplete="off" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder-slate-600" placeholder="Ej. Juan Pérez...">
+                    <ul id="autocomplete-list" class="hidden absolute z-50 w-full bg-slate-800 border border-slate-600 rounded-lg mt-1 max-h-48 overflow-y-auto shadow-xl"></ul>
+                </div>
+
+                <!-- Campo de Tiempo Altamente Personalizable -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5">Antelación de Alarma</label>
+                    <div class="flex gap-2">
+                        <!-- Input numérico directo -->
+                        <input type="number" id="notif-time-value" value="1" min="0" oninput="refreshPreviewTimer()" class="w-1/2 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white text-center font-mono focus:outline-none focus:border-indigo-500">
+                        
+                        <!-- Unidad de medida -->
+                        <select id="notif-time-unit" onchange="refreshPreviewTimer()" class="w-1/2 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+                            <option value="hours" selected>Hora(s)</option>
+                            <option value="minutes">Minuto(s)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Contenedor del Temporizador Activo -->
+                <div id="next-shift-preview" class="hidden p-3 bg-indigo-900/20 border border-indigo-500/30 rounded-lg text-sm">
+                </div>
+            </div>
+            
+            <div class="mt-6 flex justify-between items-center">
+                <button onclick="disableNotifications()" class="text-xs text-red-400 hover:text-red-300 font-medium">Desactivar alarma</button>
+                <div class="flex gap-3">
+                    <button onclick="closeNotifModal()" class="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white">Cerrar</button>
+                    <button onclick="saveNotificationPrefs()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-md">Guardar y Activar</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -42,17 +100,13 @@
         <p id="loading-text" class="text-white font-medium">Procesando archivo...</p>
     </div>
 
-    <!-- Input de archivo oculto -->
     <input type="file" id="file-upload" accept=".xlsx, .xls, .csv" class="hidden" />
 
     <!-- Navbar -->
     <nav class="border-b border-slate-700/50 bg-slate-900/80 sticky top-0 z-50 backdrop-blur-md shadow-sm">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
-            
-            <!-- Logo de la aplicación -->
             <div class="flex items-center space-x-3">
                 <div class="w-9 h-9 rounded-lg bg-indigo-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
-                    <!-- SVG Calendario -->
                     <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="64.233 0 1071.533 1200" fill="currentColor">
                         <path d="M266.025,0v188.019h98.741V0H266.025z M835.233,0v188.019h98.593V0H835.233 z M64.233,90.368v263.226h1071.533V90.368h-131.341V258.52H764.634V90.368H435.218V258.52H195.574V90.368H64.233L64.233,90.368z M64.233,422.708V1200h1071.533V422.707L64.233,422.708L64.233,422.708z M485.157,602.304 c54.544,0.537,106.162,26.743,126.684,75.505c9.651,29.128,14.79,60.179,2.774,87.296c-15.042,31.283-45.537,47.569-75.455,58.065 c56.149,14.65,93.102,49.96,93.439,107.312c-0.905,39.339-19.316,74.184-47.116,96.957c-29.559,23.369-65.3,36.423-100.326,36.663 c-98.775,0-148.185-44.535-148.185-133.62h87.197c1.853,37.506,19.587,66.032,56.084,66.537 c46.396-3.161,64.767-33.646,65.149-72.681c-0.021-23.577-8.628-47.739-29.131-56.826c-26.45-10.991-55.977-9.685-81.748-9.711 v-67.825c42.127,0.878,99.996-6.554,100.426-56.777c-1.638-36.941-16.758-63.298-52.616-63.763 c-38.196,2.303-59.157,24.017-59.551,58.312h-85.81C338.835,641.275,409.87,602.69,485.157,602.304L485.157,602.304z M786.136,610.677h76.843v445.2h-83.135V697.874c-31.85,27.233-67.103,46.625-105.875,58.164V679.89 C719.203,662.349,756.595,639.296,786.136,610.677L786.136,610.677z"/>
                     </svg>
@@ -61,19 +115,18 @@
             </div>
             
             <div class="flex items-center space-x-2 sm:space-x-3">
-                <!-- Botón Instalar PWA -->
+                <button onclick="openNotifModal()" class="p-2 text-amber-400 hover:text-amber-300 hover:bg-slate-800 rounded-lg transition-colors border border-transparent hover:border-slate-700 relative" title="Alarma de Turnos">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-1.293 1.293A1 1 0 003 14h14a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"></path></svg>
+                    <span id="notif-badge" class="hidden absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 border-2 border-slate-900 rounded-full"></span>
+                </button>
                 <button id="btn-install" class="hidden bg-emerald-600 hover:bg-emerald-500 border border-emerald-500 text-white text-sm font-medium py-2 px-3 sm:px-4 rounded-lg transition-all shadow-sm items-center gap-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                     <span class="hidden sm:inline">Instalar App</span>
                 </button>
-
-                <!-- Botón Subir Local -->
                 <label for="file-upload" class="cursor-pointer bg-slate-800 hover:bg-slate-700 border border-slate-600 text-sm font-medium py-2 px-3 sm:px-4 rounded-lg transition-all shadow-sm flex items-center gap-2 text-white">
                     <svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg>
                     <span class="hidden sm:inline">Archivo Local</span>
                 </label>
-
-                <!-- Limpiar Datos -->
                 <button id="btn-clear" onclick="clearData()" class="bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-sm font-medium p-2 sm:py-2 sm:px-3 rounded-lg transition-all flex items-center gap-2" title="Limpiar Datos">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                 </button>
@@ -82,7 +135,6 @@
     </nav>
 
     <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        
         <!-- Panel Sincronización Google Sheets -->
         <div class="glass-panel p-4 sm:p-5 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 w-full">
             <div class="w-full sm:w-2/3">
@@ -95,7 +147,6 @@
             </button>
         </div>
 
-        <!-- Estado Vacío -->
         <div id="empty-state" class="hidden flex flex-col items-center justify-center py-20 text-slate-400 glass-panel rounded-2xl border-dashed border-2 border-slate-700">
             <div class="w-16 h-16 bg-slate-800/50 rounded-full flex items-center justify-center mb-4 border border-slate-700">
                 <svg class="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
@@ -104,7 +155,6 @@
             <p class="text-sm max-w-md text-center">Pega el enlace de tu archivo arriba y haz clic en "Descargar y Cargar" para sincronizar.</p>
         </div>
 
-        <!-- Visualizador Principal -->
         <div id="data-state" class="hidden space-y-6">
             <div class="flex flex-col glass-panel p-5 rounded-2xl shadow-sm space-y-5">
                 <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between w-full">
@@ -133,7 +183,7 @@
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <!-- Ayer -->
+                <!-- Columnas de Ayer, Hoy, Mañana -->
                 <div class="glass-panel rounded-2xl flex flex-col h-[600px]">
                     <div class="bg-slate-800/40 px-5 py-4 border-b border-slate-700/50 rounded-t-2xl flex justify-between items-center">
                         <h3 class="font-medium text-slate-200">Ayer</h3>
@@ -141,8 +191,6 @@
                     </div>
                     <div class="p-4 flex-grow overflow-y-auto space-y-4" id="list-ayer"></div>
                 </div>
-
-                <!-- Hoy -->
                 <div class="glass-panel rounded-2xl flex flex-col h-[600px] ring-1 ring-indigo-500/50 shadow-[0_0_20px_rgba(99,102,241,0.15)] relative transform lg:-translate-y-1">
                     <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-blue-500 to-indigo-500 rounded-t-2xl"></div>
                     <div class="bg-indigo-900/10 px-5 py-4 border-b border-indigo-500/20 rounded-t-2xl flex justify-between items-center mt-1">
@@ -154,8 +202,6 @@
                     </div>
                     <div class="p-4 flex-grow overflow-y-auto space-y-4" id="list-hoy"></div>
                 </div>
-
-                <!-- Mañana -->
                 <div class="glass-panel rounded-2xl flex flex-col h-[600px]">
                     <div class="bg-slate-800/40 px-5 py-4 border-b border-slate-700/50 rounded-t-2xl flex justify-between items-center">
                         <h3 class="font-medium text-slate-200">Mañana</h3>
@@ -167,7 +213,6 @@
         </div>
     </main>
 
-    <!-- Lógica de la Aplicación -->
     <script src="app.js"></script>
 </body>
 </html>
